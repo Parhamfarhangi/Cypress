@@ -1,0 +1,273 @@
+import pygame
+import sys
+
+pygame.init()
+
+# ---------- Global Settings ----------
+WIDTH, HEIGHT = 800, 600
+SCREEN = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Cypress System Prototype")
+FONT = pygame.font.Font(None, 32)
+BIG_FONT = pygame.font.Font(None, 48)
+CLOCK = pygame.time.Clock()
+
+# Dummy user data for login
+USERS = {
+    "user1": "pass123",
+    "employee": "emp123",
+}
+
+# ---------- Utility Classes ----------
+
+class InputBox:
+    def __init__(self, x, y, w, h, text=''):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.color_inactive = pygame.Color('lightskyblue3')
+        self.color_active = pygame.Color('dodgerblue2')
+        self.color = self.color_inactive
+        self.text = text
+        self.txt_surface = FONT.render(text, True, self.color)
+        self.active = False
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            # Toggle active state if clicked on input box
+            if self.rect.collidepoint(event.pos):
+                self.active = not self.active
+            else:
+                self.active = False
+            self.color = self.color_active if self.active else self.color_inactive
+
+        if event.type == pygame.KEYDOWN:
+            if self.active:
+                if event.key == pygame.K_RETURN:
+                    # You might process the input here
+                    pass
+                elif event.key == pygame.K_BACKSPACE:
+                    self.text = self.text[:-1]
+                else:
+                    self.text += event.unicode
+                self.txt_surface = FONT.render(self.text, True, pygame.Color('black'))
+
+    def update(self):
+        # Adjust the width if text is too long
+        width = max(200, self.txt_surface.get_width()+10)
+        self.rect.w = width
+
+    def draw(self, screen):
+        # Draw the text.
+        screen.blit(self.txt_surface, (self.rect.x+5, self.rect.y+5))
+        # Draw the rect.
+        pygame.draw.rect(screen, self.color, self.rect, 2)
+
+class Button:
+    def __init__(self, text, x, y, w, h, callback):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.text = text
+        self.callback = callback
+        self.txt_surface = FONT.render(text, True, pygame.Color('white'))
+        self.color = pygame.Color('gray')
+
+    def draw(self, screen):
+        pygame.draw.rect(screen, self.color, self.rect)
+        text_rect = self.txt_surface.get_rect(center=self.rect.center)
+        screen.blit(self.txt_surface, text_rect)
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if self.rect.collidepoint(event.pos):
+                self.callback()
+
+# ---------- Scene Management ----------
+
+class SceneBase:
+    def __init__(self):
+        self.next_scene = self
+
+    def process_events(self, events):
+        pass
+
+    def update(self):
+        pass
+
+    def render(self, screen):
+        pass
+
+    def switch_to_scene(self, next_scene):
+        self.next_scene = next_scene
+
+class SceneManager:
+    def __init__(self, start_scene):
+        self.active_scene = start_scene
+
+    def run(self):
+        while self.active_scene is not None:
+            events = pygame.event.get()
+            for event in events:
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+
+            self.active_scene.process_events(events)
+            self.active_scene.update()
+            self.active_scene.render(SCREEN)
+
+            self.active_scene = self.active_scene.next_scene
+
+            pygame.display.flip()
+            CLOCK.tick(30)
+
+# ---------- Scenes ----------
+
+class LoginScene(SceneBase):
+    def __init__(self):
+        super().__init__()
+        self.username_box = InputBox(300, 200, 200, 32)
+        self.password_box = InputBox(300, 250, 200, 32)
+        self.message = ""
+        self.failed_attempts = 0
+
+        self.login_button = Button("Login", 350, 300, 100, 40, self.try_login)
+
+    def try_login(self):
+        username = self.username_box.text.strip()
+        password = self.password_box.text.strip()
+        if username in USERS and USERS[username] == password:
+            self.message = "Login successful!"
+            # Switch to report scene after successful login
+            self.switch_to_scene(ReportScene(username))
+        else:
+            self.failed_attempts += 1
+            self.message = "Invalid username or password."
+            if self.failed_attempts >= 3:
+                self.message = "Too many failed attempts. Account locked for 15 minutes."
+                # For simplicity, we can quit or reset input here
+                self.username_box.text = ""
+                self.password_box.text = ""
+        # Update the text surfaces for feedback
+        self.username_box.txt_surface = FONT.render(self.username_box.text, True, pygame.Color('black'))
+        self.password_box.txt_surface = FONT.render(self.password_box.text, True, pygame.Color('black'))
+
+    def process_events(self, events):
+        for event in events:
+            self.username_box.handle_event(event)
+            self.password_box.handle_event(event)
+            self.login_button.handle_event(event)
+
+    def update(self):
+        self.username_box.update()
+        self.password_box.update()
+
+    def render(self, screen):
+        screen.fill(pygame.Color('white'))
+        # Draw title
+        title = BIG_FONT.render("Login", True, pygame.Color('black'))
+        screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 100))
+        # Draw input boxes and button
+        self.username_box.draw(screen)
+        self.password_box.draw(screen)
+        self.login_button.draw(screen)
+        # Draw labels
+        username_label = FONT.render("Username:", True, pygame.Color('black'))
+        password_label = FONT.render("Password:", True, pygame.Color('black'))
+        screen.blit(username_label, (200, 205))
+        screen.blit(password_label, (200, 255))
+        # Draw message
+        msg_surface = FONT.render(self.message, True, pygame.Color('red'))
+        screen.blit(msg_surface, (300, 350))
+
+class ReportScene(SceneBase):
+    def __init__(self, username):
+        super().__init__()
+        self.username = username
+        self.map_surface = pygame.Surface((600, 400))
+        self.map_surface.fill(pygame.Color('lightgray'))
+        self.report_info = ""
+        self.problem_type = ""
+        self.description = ""
+        self.selected_location = None
+
+        # Input boxes for report details
+        self.problem_box = InputBox(100, 450, 200, 32)
+        self.desc_box = InputBox(350, 450, 300, 32)
+
+        self.submit_button = Button("Submit Report", 350, 500, 150, 40, self.submit_report)
+        self.message = ""
+
+    def submit_report(self):
+        # In a full implementation, you'd check duplicates, validate location, etc.
+        if self.selected_location is None:
+            self.message = "Please select a location on the map."
+            return
+        if self.problem_box.text.strip() == "":
+            self.message = "Please select a problem type."
+            return
+        if self.desc_box.text.strip() == "":
+            self.message = "Please provide a description."
+            return
+
+        # Simulate storing the report (in reality, you'd write to a database)
+        self.report_info = f"Report by {self.username}: {self.problem_box.text}, {self.desc_box.text} at {self.selected_location}"
+        self.message = "Report submitted successfully!"
+        # Reset fields
+        self.problem_box.text = ""
+        self.desc_box.text = ""
+        self.problem_box.txt_surface = FONT.render("", True, pygame.Color('black'))
+        self.desc_box.txt_surface = FONT.render("", True, pygame.Color('black'))
+        self.selected_location = None
+
+    def process_events(self, events):
+        for event in events:
+            self.problem_box.handle_event(event)
+            self.desc_box.handle_event(event)
+            self.submit_button.handle_event(event)
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                # Check if click is on the map area
+                map_rect = pygame.Rect(100, 30, 600, 400)
+                if map_rect.collidepoint(event.pos):
+                    # For simplicity, store the click position relative to the map surface
+                    x, y = event.pos[0] - 100, event.pos[1] - 30
+                    self.selected_location = (x, y)
+                    self.message = f"Location selected: {self.selected_location}"
+
+    def update(self):
+        self.problem_box.update()
+        self.desc_box.update()
+
+    def render(self, screen):
+        screen.fill(pygame.Color('white'))
+        # Draw title
+        title = BIG_FONT.render("Report a Problem", True, pygame.Color('black'))
+        screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 0))
+        # Draw the map area
+        map_rect = pygame.Rect(100, 30, 600, 400)
+        screen.blit(self.map_surface, map_rect.topleft)
+        # If a location is selected, draw a marker
+        if self.selected_location:
+            marker_pos = (100 + self.selected_location[0], 30 + self.selected_location[1])
+            pygame.draw.circle(screen, pygame.Color('red'), marker_pos, 5)
+        # Draw input labels
+        problem_label = FONT.render("Problem Type:", True, pygame.Color('black'))
+        desc_label = FONT.render("Description:", True, pygame.Color('black'))
+        screen.blit(problem_label, (100, 410))
+        screen.blit(desc_label, (350, 410))
+        # Draw input boxes and submit button
+        self.problem_box.draw(screen)
+        self.desc_box.draw(screen)
+        self.submit_button.draw(screen)
+        # Draw messages
+        msg_surface = FONT.render(self.message, True, pygame.Color('blue'))
+        screen.blit(msg_surface, (100, 550))
+        # Optionally display report info if submitted
+        if self.report_info:
+            info_surface = FONT.render(self.report_info, True, pygame.Color('green'))
+            screen.blit(info_surface, (100, 580))
+
+# ---------- Main ----------
+def main():
+    start_scene = LoginScene()
+    scene_manager = SceneManager(start_scene)
+    scene_manager.run()
+
+if __name__ == '__main__':
+    main()
